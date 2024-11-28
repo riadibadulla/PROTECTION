@@ -1,0 +1,9 @@
+# created by virtualenv automatically
+venv/Lib
+*.csv
+.idea
+.pyc
+.iml
+.xml
+venv/*
+venv
