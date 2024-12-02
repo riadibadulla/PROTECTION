@@ -1,11 +1,12 @@
 from dataset import load_and_preprocess_data, CustomDataset
-from models import MLPModel_small, MLPModel2_large
+from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN
 from train import train_model, filter_data_by_model
 from evaluate import evaluate_model, combine_predictions, plot_histogram
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import numpy as np
 # Load and preprocess the data
+import torch
 
 X_train, X_test, y_train, y_test = load_and_preprocess_data('merged_shuffled_dataset.csv')
 
@@ -17,7 +18,9 @@ test_loader = DataLoader(test_dataset, batch_size=32)
 
 # Train the first model
 print(f'Input features shape after the encoding is equal to {X_train.shape[1]}')
-model1 = MLPModel_small(X_train.shape[1])
+# model1 = MLPModel2_large(X_train.shape[1])
+# model1 = Conv1DModel(1,X_train.shape[1])
+model1 = PureCNN(X_train.shape[1]).to(torch.device("mps"))
 criterion = nn.BCELoss()
 train_model(model1, train_loader, criterion, epochs=10)
 
@@ -37,7 +40,8 @@ filtered_train_dataset = CustomDataset(X_filtered_train, y_filtered_train)
 filtered_train_loader = DataLoader(filtered_train_dataset, batch_size=32, shuffle=True)
 
 # Train the second model
-model2 = MLPModel_small(X_train.shape[1])
+# model2 = MLPModel_small(X_train.shape[1])
+model2 = PureCNN(X_train.shape[1]).to(torch.device("mps"))
 train_model(model2, filtered_train_loader, criterion, epochs=10)
 
 # Combine predictions and evaluate

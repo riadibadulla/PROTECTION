@@ -12,6 +12,9 @@ def train_model(model, train_loader, criterion, lr=0.001, epochs=10):
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}", leave=False)
         for features, labels in progress_bar:
             optimizer.zero_grad()
+            features = features.unsqueeze(1).to(torch.device("mps"))
+            # features = features.unsqueeze(1)
+            labels = labels.to(torch.device("mps"))
             outputs = model(features).squeeze()
             loss = criterion(outputs, labels)
             loss.backward()
