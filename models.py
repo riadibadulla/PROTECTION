@@ -113,3 +113,58 @@ class PureCNN(nn.Module):
         x = self.sigmoid(self.fc2(x))  # FC2 -> Sigmoid for binary classification
 
         return x
+
+class smallCNN(nn.Module):
+    def __init__(self, seq_len):
+        super(smallCNN, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=7, padding="same"),
+            nn.BatchNorm1d(8),
+            nn.ReLU(),
+
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(8, 8, kernel_size=7, padding="same"),
+            nn.BatchNorm1d(8),
+            nn.ReLU(),
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv1d(8, 16, kernel_size=7, padding="same"),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2)
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv1d(16, 16, kernel_size=3, padding="same"),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+        )
+        self.conv5 = nn.Sequential(
+            nn.Conv1d(16, 16, kernel_size=3, padding="same"),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+
+        )
+        self.conv6 = nn.Sequential(
+            nn.Conv1d(16, 32, kernel_size=7, padding="same"),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2)
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(32, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = x + self.conv2(x)
+        x = self.conv3(x)
+        x = x + self.conv4(x)
+        x = x + self.conv5(x)
+        x = self.conv6(x)
+        x = x.view(x.size(0), -1)  # Flatten for the fully connected layers
+        x = self.fc(x)
+        return x

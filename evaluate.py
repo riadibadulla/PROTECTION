@@ -6,8 +6,8 @@ def evaluate_model(model, data_loader):
     model.eval()
     with torch.no_grad():
         for features, label in data_loader:
-            outputs = model(features).squeeze()
-            predictions.extend(outputs.numpy())
+            outputs = model(features.unsqueeze(1).to(torch.device("mps"))).squeeze()
+            predictions.extend(outputs.to(torch.device("cpu")).numpy())
             labels.extend(label.numpy())
 
     accuracy = np.mean(((np.array(predictions) > 0.5) == labels))
@@ -19,9 +19,9 @@ def combine_predictions(model1, model2, test_dataset, low_thresh=0.25, high_thre
     model2.eval()
     with torch.no_grad():
         for features, _ in test_dataset:
-            proba_model1 = model1(features.unsqueeze(0)).item()
+            proba_model1 = model1(features.unsqueeze(0).unsqueeze(0).to(torch.device("mps"))).item()
             if low_thresh <= proba_model1 <= high_thresh:
-                proba_model2 = model2(features.unsqueeze(0)).item()
+                proba_model2 = model2(features.unsqueeze(0).unsqueeze(0).to(torch.device("mps"))).item()
                 final_predictions.append(proba_model2)
             else:
                 final_predictions.append(proba_model1)

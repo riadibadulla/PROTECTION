@@ -1,5 +1,5 @@
 from dataset import load_and_preprocess_data, CustomDataset
-from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN
+from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN, smallCNN
 from train import train_model, filter_data_by_model
 from evaluate import evaluate_model, combine_predictions, plot_histogram
 from torch.utils.data import DataLoader
@@ -20,9 +20,9 @@ test_loader = DataLoader(test_dataset, batch_size=32)
 print(f'Input features shape after the encoding is equal to {X_train.shape[1]}')
 # model1 = MLPModel2_large(X_train.shape[1])
 # model1 = Conv1DModel(1,X_train.shape[1])
-model1 = PureCNN(X_train.shape[1]).to(torch.device("mps"))
+model1 = MLPModel2_large(X_train.shape[1]).to(torch.device("mps"))
 criterion = nn.BCELoss()
-train_model(model1, train_loader, criterion, epochs=10)
+train_model(model1, train_loader, criterion, lr=0.001, epochs=40)
 
 # Evaluate the first model
 accuracy1, y_test_proba = evaluate_model(model1, test_loader)
@@ -41,8 +41,8 @@ filtered_train_loader = DataLoader(filtered_train_dataset, batch_size=32, shuffl
 
 # Train the second model
 # model2 = MLPModel_small(X_train.shape[1])
-model2 = PureCNN(X_train.shape[1]).to(torch.device("mps"))
-train_model(model2, filtered_train_loader, criterion, epochs=10)
+model2 = MLPModel2_large(X_train.shape[1]).to(torch.device("mps"))
+train_model(model2, filtered_train_loader, criterion, lr=0.001, epochs=40)
 
 # Combine predictions and evaluate
 final_predictions = combine_predictions(model1, model2, test_loader.dataset)

@@ -31,8 +31,8 @@ def filter_data_by_model(model, data_loader, low_thresh=0.25, high_thresh=0.65):
     with torch.no_grad():
         progress_bar = tqdm(data_loader, desc="Filtering data", leave=False)
         for features, _ in progress_bar:
-            outputs = model(features).squeeze()
-            probabilities.extend(outputs.numpy())
+            outputs = model(features.unsqueeze(1).to(torch.device("mps"))).squeeze()
+            probabilities.extend(outputs.to(torch.device("cpu")).numpy())
 
     probabilities = np.array(probabilities)
     mask = (probabilities >= low_thresh) & (probabilities <= high_thresh)
