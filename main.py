@@ -1,5 +1,5 @@
 from dataset import load_and_preprocess_data, CustomDataset
-from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN, smallCNN
+from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN, smallCNN, MLPModel_thin
 from train import train_model, filter_data_by_model
 from evaluate import evaluate_model, combine_predictions, plot_histogram
 from torch.utils.data import DataLoader
@@ -7,6 +7,16 @@ import torch.nn as nn
 import numpy as np
 # Load and preprocess the data
 import torch
+
+# Determine the device
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
+
+print(f"Using device: {device}")
 
 X_train, X_test, y_train, y_test = load_and_preprocess_data('merged_shuffled_dataset.csv')
 
@@ -20,7 +30,7 @@ test_loader = DataLoader(test_dataset, batch_size=32)
 print(f'Input features shape after the encoding is equal to {X_train.shape[1]}')
 # model1 = MLPModel2_large(X_train.shape[1])
 # model1 = Conv1DModel(1,X_train.shape[1])
-model1 = MLPModel2_large(X_train.shape[1]).to(torch.device("mps"))
+model1 = MLPModel_thin(X_train.shape[1]).to(device)
 criterion = nn.BCELoss()
 train_model(model1, train_loader, criterion, lr=0.001, epochs=40)
 
@@ -41,7 +51,7 @@ filtered_train_loader = DataLoader(filtered_train_dataset, batch_size=32, shuffl
 
 # Train the second model
 # model2 = MLPModel_small(X_train.shape[1])
-model2 = MLPModel2_large(X_train.shape[1]).to(torch.device("mps"))
+model2 = MLPModel_thin(X_train.shape[1]).to(device)
 train_model(model2, filtered_train_loader, criterion, lr=0.001, epochs=40)
 
 # Combine predictions and evaluate

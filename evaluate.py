@@ -1,12 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+
+# Determine the device
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
+
 def evaluate_model(model, data_loader):
     predictions, labels = [], []
     model.eval()
     with torch.no_grad():
         for features, label in data_loader:
-            outputs = model(features.unsqueeze(1).to(torch.device("mps"))).squeeze()
+            outputs = model(features.unsqueeze(1).to(device)).squeeze()
             predictions.extend(outputs.to(torch.device("cpu")).numpy())
             labels.extend(label.numpy())
 
@@ -19,9 +28,9 @@ def combine_predictions(model1, model2, test_dataset, low_thresh=0.25, high_thre
     model2.eval()
     with torch.no_grad():
         for features, _ in test_dataset:
-            proba_model1 = model1(features.unsqueeze(0).unsqueeze(0).to(torch.device("mps"))).item()
+            proba_model1 = model1(features.unsqueeze(0).unsqueeze(0).to(device)).item()
             if low_thresh <= proba_model1 <= high_thresh:
-                proba_model2 = model2(features.unsqueeze(0).unsqueeze(0).to(torch.device("mps"))).item()
+                proba_model2 = model2(features.unsqueeze(0).unsqueeze(0).to(device)).item()
                 final_predictions.append(proba_model2)
             else:
                 final_predictions.append(proba_model1)
