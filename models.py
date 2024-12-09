@@ -42,6 +42,21 @@ class MLPModel_thin(nn.Module):
     def forward(self, x):
         return self.layers(x)
 
+class MLPModel_simple(nn.Module):
+    def __init__(self, in_features):
+        super(MLPModel_simple, self).__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(in_features, 50),
+            nn.ReLU(),
+            nn.Linear(50, 50),
+            nn.ReLU(),
+            nn.Linear(50, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.layers(x)
+
 # Define the second MLP model
 class MLPModel2_large(nn.Module):
     def __init__(self, in_features):
