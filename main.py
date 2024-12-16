@@ -1,6 +1,7 @@
 from dataset import load_and_preprocess_data, CustomDataset
 from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN, smallCNN, MLPModel_simple,  MLPModel_thin
 from train import train_model, filter_data_by_model
+from SMT import filter_data_by_model_with_marabou
 from evaluate import evaluate_model, combine_predictions, plot_histogram
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -16,12 +17,14 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
+device = torch.device("cpu") # overwritten device
+
 print(f"Using device: {device}")
 
 NUMBER_OF_EPOCHS = 20
 LR = 0.001
 
-X_train, X_test, y_train, y_test = load_and_preprocess_data('merged_shuffled_dataset.csv')
+X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
 
 # Create datasets and data loaders
 train_dataset = CustomDataset(X_train, y_train)
@@ -43,8 +46,8 @@ print(f"First Model Accuracy: {accuracy1 * 100:.2f}%")
 plot_histogram(y_test_proba, "Histogram of Model 1 Predictions")
 
 # Filter data for the second model
-train_mask = filter_data_by_model(model1, train_loader, low_thresh=0.4, high_thresh=0.65)
-test_mask = filter_data_by_model(model1, test_loader, low_thresh=0.4, high_thresh=0.65)
+train_mask = filter_data_by_model_with_marabou(model1, train_loader, low_thresh=0.48, high_thresh=0.52)
+test_mask = filter_data_by_model_with_marabou(model1, test_loader, low_thresh=0.48, high_thresh=0.52)
 
 X_filtered_train = X_train[train_mask]
 y_filtered_train = y_train[train_mask]

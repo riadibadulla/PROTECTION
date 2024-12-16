@@ -11,6 +11,7 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
+device = torch.device("cpu") # overwritten device
 
 def train_model(model, train_loader, criterion, lr=0.001, epochs=10):
     optimizer = optim.Adam(model.parameters(), lr=lr)

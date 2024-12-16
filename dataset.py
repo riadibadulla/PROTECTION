@@ -1,61 +1,10 @@
-# import pandas as pd
-# import numpy as np
-# import torch
-# from torch.utils.data import Dataset
-# from sklearn.preprocessing import StandardScaler, OneHotEncoder
-# from sklearn.model_selection import train_test_split
-#
-# class CustomDataset(Dataset):
-#     def __init__(self, features, labels):
-#         self.features = torch.tensor(features, dtype=torch.float32)
-#         self.labels = torch.tensor(labels, dtype=torch.float32)
-#
-#     def __len__(self):
-#         return len(self.labels)
-#
-#     def __getitem__(self, idx):
-#         return self.features[idx], self.labels[idx]
-#
-# def load_and_preprocess_data(filepath):
-#     data = pd.read_csv(filepath)
-#     # data = data.drop(columns=['Flow ID', 'Src IP', 'Dst IP', 'Timestamp', 'Attack Name'])
-#     data = data.drop(columns=['Flow ID', 'Src IP', 'Src Port', 'Timestamp', 'Attack Name'])
-#
-#
-#     # Define features and labels
-#     X = data.drop(columns=['Label'])
-#     y = data['Label'].values
-#
-#     # Encode categorical variable
-#     protocol_encoder = OneHotEncoder()
-#     protocol_encoded = protocol_encoder.fit_transform(X[['Protocol']]).toarray()
-#     DST_IP_encoder = OneHotEncoder()
-#     DST_IP_encoded = DST_IP_encoder.fit_transform(X[['Dst IP']]).toarray()
-#     DST_PORT_encoder = OneHotEncoder()
-#     DST_PORT_encoded = DST_PORT_encoder.fit_transform(X[['Dst Port']]).toarray()
-#
-#     X_numeric = X.drop(columns=['Protocol'])
-#     X_numeric = X_numeric.drop(columns=['Dst Port'])
-#     X_numeric = X_numeric.drop(columns=['Dst IP']).values
-#     scaler = StandardScaler()
-#     X_numeric_scaled = scaler.fit_transform(X_numeric)
-#
-#
-#     # Combine preprocessed features
-#     X_processed = np.hstack([X_numeric_scaled, protocol_encoded,DST_IP_encoded,DST_PORT_encoded])
-#
-#     # Train-test split
-#     X_train, X_test, y_train, y_test = train_test_split(X_processed, y, test_size=0.2, random_state=42)
-#
-#     return X_train, X_test, y_train, y_test
-
 import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split
-
+import ipaddress
 
 class CustomDataset(Dataset):
     def __init__(self, features, labels):
@@ -68,37 +17,36 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         return self.features[idx], self.labels[idx]
 
-
 def load_and_preprocess_data(filepath):
+    # Load dataset
     data = pd.read_csv(filepath)
 
     # Drop irrelevant columns
-    data = data.drop(columns=['Flow ID', 'Src IP', 'Src Port', 'Dst IP', 'Dst Port', 'Timestamp', 'Attack Name'],
-                     errors='ignore')
+    data = data.drop(columns=[
+        'Flow ID', 'Src Port', 'Dst Port', 'Timestamp', 'Attack Name',
+        'Fwd PSH Flags', 'Bwd PSH Flags', 'Fwd URG Flags', 'Bwd URG Flags',
+        'FIN Flag Count', 'SYN Flag Count', 'RST Flag Count', 'PSH Flag Count',
+        'ACK Flag Count', 'URG Flag Count', 'CWR Flag Count', 'ECE Flag Count',
+        'Fwd Bytes/Bulk Avg', 'Fwd Packet/Bulk Avg', 'Fwd Bulk Rate Avg',
+        'Bwd Bytes/Bulk Avg', 'Bwd Packet/Bulk Avg', 'Bwd Bulk Rate Avg'
+    ], errors='ignore')
+
+    # Convert IPs to integer representations
+    data['Src_IP_Int'] = data['Src IP'].apply(lambda x: int(ipaddress.IPv4Address(x)))
+    data['Dst_IP_Int'] = data['Dst IP'].apply(lambda x: int(ipaddress.IPv4Address(x)))
+
+    # Drop original IP columns
+    data = data.drop(columns=['Src IP', 'Dst IP'], errors='ignore')
 
     # Define features and labels
-    selected_features = [
-        'CWR Flag Count',
-        'ACK Flag Count',
-        'Bwd Packets/s',
-        'Bwd Bytes/Bulk Avg',
-        'Bwd Packet/Bulk Avg',
-        'RST Flag Count',
-        'ECE Flag Count'
-    ]
-    X = data[selected_features]
-    y = data['Label'].values
+    features = data.drop(columns=['Label'], errors='ignore')
+    labels = data['Label'].values
 
-    # Scale the selected features
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    # Apply MinMax scaling
+    scaler = MinMaxScaler()
+    features_scaled = scaler.fit_transform(features)
 
     # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(features_scaled, labels, test_size=0.2, random_state=42)
 
     return X_train, X_test, y_train, y_test
-
-
-# # Example usage
-# filepath = 'path_to_your_dataset.csv'
-# X_train, X_test, y_train, y_test = load_and_preprocess_data(filepath)

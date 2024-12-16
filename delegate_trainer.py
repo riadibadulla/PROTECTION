@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from models import MLPModel_small,MLPModel2_large
 
 # Load and preprocess data
-data = pd.read_csv('merged_shuffled_dataset.csv')
+data = pd.read_csv('Datasets/merged_shuffled_dataset.csv')
 data = data.drop(columns=['Flow ID', 'Src IP', 'Dst IP', 'Timestamp', 'Attack Name'])
 
 # Define features and labels

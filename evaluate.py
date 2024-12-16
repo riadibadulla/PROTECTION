@@ -10,6 +10,8 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
+device = torch.device("cpu") # overwritten device
+
 def evaluate_model(model, data_loader):
     predictions, labels = [], []
     model.eval()
