@@ -1,3 +1,4 @@
+import train
 from dataset import load_and_preprocess_data, CustomDataset
 from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN, smallCNN, MLPModel_simple,  MLPModel_thin
 from train import train_model, filter_data_by_model
@@ -23,6 +24,7 @@ print(f"Using device: {device}")
 
 NUMBER_OF_EPOCHS = 20
 LR = 0.001
+USING_SMT = False
 
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
 
@@ -45,9 +47,13 @@ accuracy1, y_test_proba = evaluate_model(model1, test_loader)
 print(f"First Model Accuracy: {accuracy1 * 100:.2f}%")
 plot_histogram(y_test_proba, "Histogram of Model 1 Predictions")
 
-# Filter data for the second model
-train_mask = filter_data_by_model_with_marabou(model1, train_loader, low_thresh=0.48, high_thresh=0.52)
-test_mask = filter_data_by_model_with_marabou(model1, test_loader, low_thresh=0.48, high_thresh=0.52)
+if USING_SMT:
+    # Filter data for the second model
+    train_mask = filter_data_by_model_with_marabou(model1, train_loader, low_thresh=0.48, high_thresh=0.52)
+    test_mask = filter_data_by_model_with_marabou(model1, test_loader, low_thresh=0.48, high_thresh=0.52)
+else:
+    train_mask = train.filter_data_by_model(model1, train_loader, low_thresh=0.48, high_thresh=0.52)
+    test_mask = train.filter_data_by_model(model1, test_loader, low_thresh=0.48, high_thresh=0.52)
 
 X_filtered_train = X_train[train_mask]
 y_filtered_train = y_train[train_mask]
