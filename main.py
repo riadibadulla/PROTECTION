@@ -1,8 +1,8 @@
 import train
 from dataset import load_and_preprocess_data, CustomDataset
 from models import MLPModel_small, MLPModel2_large, Conv1DModel, PureCNN, smallCNN, MLPModel_simple,  MLPModel_thin
-from train import train_model, filter_data_by_model
-from SMT import filter_data_by_model_with_marabou
+from train import train_model
+from filtering import filter_data_by_model_with_marabou, filter_data_delegate
 from evaluate import evaluate_model, combine_predictions, plot_histogram
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -52,8 +52,8 @@ if USING_SMT:
     train_mask = filter_data_by_model_with_marabou(model1, train_loader, low_thresh=0.48, high_thresh=0.52)
     test_mask = filter_data_by_model_with_marabou(model1, test_loader, low_thresh=0.48, high_thresh=0.52)
 else:
-    train_mask = train.filter_data_by_model(model1, train_loader, low_thresh=0.48, high_thresh=0.52)
-    test_mask = train.filter_data_by_model(model1, test_loader, low_thresh=0.48, high_thresh=0.52)
+    train_mask = filter_data_delegate(model1, train_loader, low_thresh=0.48, high_thresh=0.52)
+    test_mask = filter_data_delegate(model1, test_loader, low_thresh=0.48, high_thresh=0.52)
 
 X_filtered_train = X_train[train_mask]
 y_filtered_train = y_train[train_mask]
