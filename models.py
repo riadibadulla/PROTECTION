@@ -46,11 +46,19 @@ class MLPModel_simple(nn.Module):
     def __init__(self, in_features):
         super(MLPModel_simple, self).__init__()
         self.layers = nn.Sequential(
-            nn.Linear(in_features, 50),
+            nn.Linear(in_features, 120),
             nn.ReLU(),
-            nn.Linear(50, 50),
+            nn.Linear(120, 256),
             nn.ReLU(),
-            nn.Linear(50, 1),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1),
             nn.Sigmoid()
         )
 
