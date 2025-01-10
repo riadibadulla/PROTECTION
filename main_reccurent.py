@@ -1,15 +1,17 @@
 import train
 from dataset import load_and_preprocess_data, CustomDataset
-from models import MLPModel_simple
+from models import MLPModel_likeMands
 from train import train_model
 from filtering import filter_data_by_model_with_marabou, filter_data_delegate
-from evaluate import evaluate_model, plot_histogram
+from evaluate import plot_histogram
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import numpy as np
 import torch
+from sklearn.metrics import roc_curve, auc
+import matplotlib.pyplot as plt
 
-# Determine the device
+# Choose the device
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 elif torch.cuda.is_available():
@@ -21,12 +23,11 @@ device = torch.device("cpu")  # Overwritten device
 print(f"Using device: {device}")
 
 # Constants
-NUMBER_OF_EPOCHS = 20
-LR = 0.001
-USING_SMT = True
+NUMBER_OF_EPOCHS = 50
+LR = 0.1
+USING_SMT = False
 LOW_THRESHOLD = 0.4
 HIGH_THRESHOLD = 0.6
-
 
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
@@ -44,6 +45,10 @@ test_indices = np.arange(len(remaining_test_data))  # Keep track of test indices
 model_list = []
 iteration = 0
 
+# Initialize for ROC-AUC calculation
+all_predictions = []  # Store all probabilities
+all_true_labels = []  # Store all true labels
+
 while len(remaining_train_data) > 0:
     iteration += 1
     print(f"\n### Iteration {iteration} ###")
@@ -51,7 +56,7 @@ while len(remaining_train_data) > 0:
     print(f"Remaining Test Samples: {len(remaining_test_data)}")
 
     # Create a new model
-    model = MLPModel_simple(remaining_train_data.shape[1]).to(device)
+    model = MLPModel_likeMands(remaining_train_data.shape[1]).to(device)
     criterion = nn.BCELoss()
 
     # Prepare data loaders for the current filtered data
@@ -73,10 +78,14 @@ while len(remaining_train_data) > 0:
 
     with torch.no_grad():
         # Predictions for current test set
-        for i, (features, _) in enumerate(current_test_dataset):
-            features = features.to(device)  # Removed unnecessary unsqueeze
-            proba = model(features).item()  # Directly use features as input
+        for i, (features, label) in enumerate(current_test_dataset):  # Add label
+            features = features.to(device)
+            proba = model(features).item()
             predictions.append(proba)
+
+            # Store for ROC and AUC
+            all_predictions.append(proba)
+            all_true_labels.append(label.item())
 
             # Determine which samples to exclude (filter for the next iteration)
             if LOW_THRESHOLD <= proba <= HIGH_THRESHOLD:
@@ -124,3 +133,20 @@ plot_histogram(final_predictions[final_predictions > 0], "Final Combined Predict
 final_labels = y_test
 combined_accuracy = np.mean((final_predictions > 0.5) == final_labels)
 print(f"Final Combined Model Accuracy: {combined_accuracy * 100:.2f}%")
+
+# Compute and Plot ROC-AUC
+fpr, tpr, thresholds = roc_curve(all_true_labels, all_predictions)
+roc_auc = auc(fpr, tpr)
+
+# Plot the ROC curve
+plt.figure()
+plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random Guess')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc="lower right")
+plt.show()
+
+# Print the AUC score
+print(f"AUC Score: {roc_auc:.2f}")
