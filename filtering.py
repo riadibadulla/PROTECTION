@@ -38,15 +38,8 @@ def filter_data_by_model_with_marabou(model, data_loader, low_thresh=0.25, high_
                 # Perturb inputs in Marabou
                 data_point = data_point.numpy()
                 for i, var in enumerate(input_vars):
-                    if i==3:
-                        network.setLowerBound(var, max(0.0, data_point[i] - perturbation))
-                        network.setUpperBound(var, min(1.0, data_point[i] + perturbation))
-                    else:
-                        network.setLowerBound(var, data_point[i])
-                        network.setUpperBound(var, data_point[i])
-                    network.setLowerBound(var, data_point[i] - perturbation)
-                    network.setUpperBound(var, data_point[i] + perturbation)
-
+                    network.setLowerBound(var, max(0.0, data_point[i] - perturbation))
+                    network.setUpperBound(var, min(1.0, data_point[i] + perturbation))
                 # output bounds
                 network.setLowerBound(output_var, low_thresh)
                 network.setUpperBound(output_var, high_thresh)

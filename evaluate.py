@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+import time
+import os
 
 # Determine the device
 if torch.backends.mps.is_available():
@@ -11,6 +13,8 @@ else:
     device = torch.device("cpu")
 
 device = torch.device("cpu") # overwritten device
+output_dir = "figures"
+
 
 def evaluate_model(model, data_loader):
     predictions, labels = [], []
@@ -39,10 +43,18 @@ def combine_predictions(model1, model2, test_dataset, low_thresh=0.25, high_thre
 
     return np.array(final_predictions)
 
-def plot_histogram(predictions, title):
+def plot_histogram(predictions, title, iteration=None):
     plt.figure(figsize=(10, 6))
     plt.hist(predictions, bins=[i * 0.05 for i in range(21)], edgecolor='black', alpha=0.7)
     plt.xlabel('Predicted Probability')
     plt.ylabel('Frequency')
     plt.title(title)
+
+    # Create a unique filename
+    unique_id = f"iter_{iteration}" if iteration is not None else f"ts_{int(time.time())}"
+    filename = f"{title.replace(':', '').replace(' ', '_')}_{unique_id}.png"
+    plt.savefig(os.path.join(output_dir, filename))  # Save figure to 'figures' folder
+
     plt.show()
+
+

@@ -10,6 +10,8 @@ import numpy as np
 import torch
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
+import os
+import time
 
 # Choose the device
 if torch.backends.mps.is_available():
@@ -21,6 +23,7 @@ else:
 
 device = torch.device("cpu")  # Overwritten device
 print(f"Using device: {device}")
+output_dir = "figures"
 
 # Constants
 NUMBER_OF_EPOCHS = 50
@@ -100,8 +103,8 @@ while len(remaining_train_data) > 0:
             train_predictions.extend(proba)
 
     # Plot histograms for current iteration
-    plot_histogram(predictions, f"Iteration {iteration}: Test Set Predictions")
-    plot_histogram(train_predictions, f"Iteration {iteration}: Training Set Predictions")
+    plot_histogram(predictions, f"Iteration {iteration}: Test Set Predictions", iteration=iteration)
+    plot_histogram(train_predictions, f"Iteration {iteration}: Training Set Predictions", iteration=iteration)
 
     # Store predictions for test samples not filtered for the next iteration
     for i, include in enumerate(test_mask):
@@ -147,6 +150,11 @@ plt.ylabel('True Positive Rate')
 plt.title('Receiver Operating Characteristic (ROC) Curve')
 plt.legend(loc="lower right")
 plt.show()
+
+# Create a unique filename
+unique_id = f"iter_{iteration}" if iteration is not None else f"ts_{int(time.time())}"
+filename = f"roc_curve_{unique_id}.png"
+plt.savefig(os.path.join(output_dir, filename))  # Save figure to 'figures' folder
 
 # Print the AUC score
 print(f"AUC Score: {roc_auc:.2f}")
