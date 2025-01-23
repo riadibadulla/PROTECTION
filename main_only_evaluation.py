@@ -87,19 +87,23 @@ while True:
             all_true_labels.append(label.item())
 
             # Determine which samples to exclude (filter for the next iteration)
-
-            if LOW_THRESHOLD <= proba <= HIGH_THRESHOLD:
-                test_mask.append(True)  # Keep for next iteration
-            else:
-                test_mask.append(False)  # Exclude from next iteration
+            if not USING_SMT:
+                # Filter training data
+                if LOW_THRESHOLD <= proba <= HIGH_THRESHOLD:
+                    test_mask.append(True)  # Keep for next iteration
+                else:
+                    test_mask.append(False)  # Exclude from next iteration
 
         # Plot histograms for current iteration
         plot_histogram(predictions, f"Iteration {iteration}: Test Set Predictions, Per={PERTURBATION}", iteration=iteration, perturbation=PERTURBATION)
-
+        if USING_SMT:
+            test_mask = filter_data_by_model_with_marabou(model, current_test_loader, low_thresh=LOW_THRESHOLD,
+                                                          high_thresh=HIGH_THRESHOLD, perturbation=PERTURBATION)
         # Store predictions for test samples not filtered for the next iteration
         for i, include in enumerate(test_mask):
             if not include:  # Only store confident predictions
                 final_predictions[test_indices[i]] = predictions[i]
+
 
     # Update test dataset for the next iteration
     test_mask = np.array(test_mask)
