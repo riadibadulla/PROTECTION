@@ -12,6 +12,8 @@ from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 import os
 import time
+torch.manual_seed(1997)
+np.random.seed(1997)
 
 # Choose the device
 if torch.backends.mps.is_available():
@@ -26,11 +28,12 @@ print(f"Using device: {device}")
 output_dir = "figures"
 
 # Constants
-NUMBER_OF_EPOCHS = 50
-LR = 0.1
+NUMBER_OF_EPOCHS = 10
+LR = 0.01
 USING_SMT = False
 LOW_THRESHOLD = 0.4
 HIGH_THRESHOLD = 0.6
+PERTURBATION = 0.001
 
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
@@ -52,7 +55,7 @@ iteration = 0
 all_predictions = []  # Store all probabilities
 all_true_labels = []  # Store all true labels
 
-while len(remaining_train_data) > 0:
+while len(remaining_train_data) > 10:
     iteration += 1
     print(f"\n### Iteration {iteration} ###")
     print(f"Remaining Training Samples: {len(remaining_train_data)}")
@@ -67,7 +70,7 @@ while len(remaining_train_data) > 0:
     current_train_loader = DataLoader(current_train_dataset, batch_size=32, shuffle=True)
 
     current_test_dataset = CustomDataset(remaining_test_data, remaining_test_labels)
-    current_test_loader = DataLoader(current_test_dataset, batch_size=32)
+    current_test_loader = DataLoader(current_test_dataset, batch_size=32, shuffle=False)
 
     # Train the model
     train_model(model, current_train_loader, criterion, lr=LR, epochs=NUMBER_OF_EPOCHS)
@@ -103,8 +106,8 @@ while len(remaining_train_data) > 0:
             train_predictions.extend(proba)
 
     # Plot histograms for current iteration
-    plot_histogram(predictions, f"Iteration {iteration}: Test Set Predictions", iteration=iteration)
-    plot_histogram(train_predictions, f"Iteration {iteration}: Training Set Predictions", iteration=iteration)
+    plot_histogram(predictions, f"Iteration {iteration}: Test Set Predictions, Per={PERTURBATION}", iteration=iteration, perturbation=PERTURBATION)
+    plot_histogram(train_predictions, f"Iteration {iteration}: Training Set Predictions, Per={PERTURBATION}", iteration=iteration, perturbation=PERTURBATION)
 
     # Store predictions for test samples not filtered for the next iteration
     for i, include in enumerate(test_mask):
@@ -113,13 +116,14 @@ while len(remaining_train_data) > 0:
 
     # Update test dataset for the next iteration
     test_mask = np.array(test_mask)
-    remaining_test_data = remaining_test_data[test_mask]
-    remaining_test_labels = remaining_test_labels[test_mask]
-    test_indices = test_indices[test_mask]
+    if test_mask.size > 0:
+        remaining_test_data = remaining_test_data[test_mask]
+        remaining_test_labels = remaining_test_labels[test_mask]
+        test_indices = test_indices[test_mask]
 
     # Filter training data
     if USING_SMT:
-        train_mask = filter_data_by_model_with_marabou(model, current_train_loader, low_thresh=LOW_THRESHOLD, high_thresh=HIGH_THRESHOLD)
+        train_mask = filter_data_by_model_with_marabou(model, current_train_loader, low_thresh=LOW_THRESHOLD, high_thresh=HIGH_THRESHOLD, perturbation=PERTURBATION)
     else:
         train_mask = filter_data_delegate(model, current_train_loader, low_thresh=LOW_THRESHOLD, high_thresh=HIGH_THRESHOLD)
 
@@ -128,9 +132,11 @@ while len(remaining_train_data) > 0:
 
     if len(remaining_train_data) == 0:
         print("No more ambiguous samples left for training. Exiting the loop.")
+    model.eval()
+    torch.save(model.state_dict(), f"model_epsilon={PERTURBATION}_iteration_{iteration}.pth")
 
 # Final histogram and accuracy
-plot_histogram(final_predictions[final_predictions > 0], "Final Combined Predictions (Confident Test Samples)")
+plot_histogram(final_predictions[final_predictions > 0], f"Final Combined Predictions (Confident Test Samples) per={PERTURBATION}", perturbation=PERTURBATION)
 
 # Evaluate combined predictions
 final_labels = y_test
@@ -147,13 +153,13 @@ plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:
 plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random Guess')
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
-plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.title(f'Receiver Operating Characteristic (ROC) Curve, for Perturbations={PERTURBATION}')
 plt.legend(loc="lower right")
 plt.show()
 
 # Create a unique filename
 unique_id = f"iter_{iteration}" if iteration is not None else f"ts_{int(time.time())}"
-filename = f"roc_curve_{unique_id}.png"
+filename = f"roc_curve_{unique_id}_per={PERTURBATION}.png"
 plt.savefig(os.path.join(output_dir, filename))  # Save figure to 'figures' folder
 
 # Print the AUC score
