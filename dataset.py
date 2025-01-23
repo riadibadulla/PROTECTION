@@ -5,6 +5,7 @@ from torch.utils.data import Dataset
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 import ipaddress
+import hashlib
 
 class CustomDataset(Dataset):
     def __init__(self, features, labels):
@@ -36,9 +37,15 @@ def load_and_preprocess_data(filepath):
     data['Src_IP_Port'] = data['Src IP'] + ':' + data['Src Port'].astype(str)
     data['Dst_IP_Port'] = data['Dst IP'] + ':' + data['Dst Port'].astype(str)
 
-    # Convert IP:Port to integer hash values
-    data['Src_IP_Port_Int'] = data['Src_IP_Port'].apply(lambda x: hash(x) % (10 ** 9))
-    data['Dst_IP_Port_Int'] = data['Dst_IP_Port'].apply(lambda x: hash(x) % (10 ** 9))
+    # # Convert IP:Port to integer hash values
+    # data['Src_IP_Port_Int'] = data['Src_IP_Port'].apply(lambda x: hash(x) % (10 ** 9))
+    # data['Dst_IP_Port_Int'] = data['Dst_IP_Port'].apply(lambda x: hash(x) % (10 ** 9))
+
+    def deterministic_hash(value):
+        return int(hashlib.sha256(value.encode('utf-8')).hexdigest(), 16) % (10 ** 9)
+
+    data['Src_IP_Port_Int'] = data['Src_IP_Port'].apply(deterministic_hash)
+    data['Dst_IP_Port_Int'] = data['Dst_IP_Port'].apply(deterministic_hash)
 
     # Drop original IP and Port columns
     data = data.drop(columns=['Src IP', 'Src Port', 'Dst IP', 'Dst Port', 'Src_IP_Port', 'Dst_IP_Port'], errors='ignore')
