@@ -16,13 +16,22 @@ device = torch.device("cpu") # overwritten device
 
 
 def filter_data_by_model_with_marabou(model, data_loader, low_thresh=0.25, high_thresh=0.65, perturbation=0.001):
-    options = Marabou.createOptions(verbosity=0, numWorkers=6)
+    options = Marabou.createOptions(verbosity=0, numWorkers=48)
     # onnx save
-    dummy_input = next(iter(data_loader))[0][0].unsqueeze(0)  # extract one sample to infer shape
-    torch.onnx.export(model, dummy_input, "model.onnx", input_names=["input"], output_names=["output"])
+    # dummy_input = next(iter(data_loader))[0][0].unsqueeze(0)  # extract one sample to infer shape
+    try:
+        dummy_input = next(iter(data_loader))[0][0].unsqueeze(0)  # Extract one sample to infer shape
+    except StopIteration:
+        print("Warning: Data loader is empty. Using default dummy input.")
+        # When there are two empty iterations for test
+        dummy_input = torch.zeros(1, 61)  # Default tensor of shape [1, 61]
+
+    onnx_filename = f"model_perturbations={perturbation}.onnx"
+
+    torch.onnx.export(model, dummy_input, onnx_filename, input_names=["input"], output_names=["output"])
 
     # onnx load
-    network = Marabou.read_onnx("model.onnx")
+    network = Marabou.read_onnx(onnx_filename)
     input_vars = network.inputVars[0][0]  # input variables
     output_var = network.outputVars[0][0][0]  # single output variable
 
@@ -57,7 +66,9 @@ def filter_data_delegate(model, data_loader, low_thresh=0.25, high_thresh=0.65):
         progress_bar = tqdm(data_loader, desc="Filtering data", leave=False)
         for features, _ in progress_bar:
             outputs = model(features.unsqueeze(1).to(device)).squeeze()
-            probabilities.extend(outputs.to(torch.device("cpu")).numpy())
+
+            # have to flatten as now the shape is [batch,1]
+            probabilities.extend(outputs.to(torch.device("cpu")).numpy().flatten())
 
     probabilities = np.array(probabilities)
     mask = (probabilities >= low_thresh) & (probabilities <= high_thresh)
