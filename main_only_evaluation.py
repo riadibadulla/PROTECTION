@@ -25,11 +25,11 @@ torch.manual_seed(1997)
 np.random.seed(1997)
 
 # Constants
-USING_SMT = False
-LOW_THRESHOLD = 0.4
-HIGH_THRESHOLD = 0.6
-PERTURBATION = 0.001
-
+USING_SMT = True
+LOW_THRESHOLD = 0.48
+HIGH_THRESHOLD = 0.52
+PERTURBATION = 0.01
+TRAINED_WITH_PERTURBATION = 0.01
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
 
@@ -51,7 +51,7 @@ all_true_labels = []  # Store all true labels
 
 while True:
     iteration += 1
-    model_path = f"model_epsilon={PERTURBATION}_iteration_{iteration}.pth"
+    model_path = f"model_epsilon={TRAINED_WITH_PERTURBATION}_iteration_{iteration}.pth"
     
     # Check if the model file exists
     if not os.path.exists(model_path):
@@ -95,7 +95,7 @@ while True:
                     test_mask.append(False)  # Exclude from next iteration
 
         # Plot histograms for current iteration
-        plot_histogram(predictions, f"Iteration {iteration}: Test Set Predictions, Per={PERTURBATION}", iteration=iteration, perturbation=PERTURBATION)
+        plot_histogram(predictions, f"Iteration {iteration}: Test Set Predictions, Train_per = {TRAINED_WITH_PERTURBATION}, Tes_Per={PERTURBATION}", iteration=iteration, perturbation=PERTURBATION)
         if USING_SMT:
             test_mask = filter_data_by_model_with_marabou(model, current_test_loader, low_thresh=LOW_THRESHOLD,
                                                           high_thresh=HIGH_THRESHOLD, perturbation=PERTURBATION)
@@ -135,7 +135,11 @@ if np.any(final_predictions > 0):
         plt.title(f'Receiver Operating Characteristic (ROC) Curve, for Perturbations={PERTURBATION}')
         plt.legend(loc="lower right")
         plt.show()
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)  # Ensure the directory exists
 
+        roc_curve_path = os.path.join(output_dir, f"roc_curve_train_per_{TRAINED_WITH_PERTURBATION} test_perturbation_{PERTURBATION}_SMT_USED={USING_SMT}.png")
+        plt.savefig(roc_curve_path)
         # Print the AUC score
         print(f"AUC Score: {roc_auc:.2f}")
     else:
