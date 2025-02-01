@@ -4,6 +4,9 @@ import torch
 import time
 import os
 
+torch.manual_seed(1997)
+np.random.seed(1997)
+
 # Determine the device
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -43,7 +46,7 @@ def combine_predictions(model1, model2, test_dataset, low_thresh=0.25, high_thre
 
     return np.array(final_predictions)
 
-def plot_histogram(predictions, title, iteration=None):
+def plot_histogram(predictions, title, iteration=None, perturbation=0):
     plt.figure(figsize=(10, 6))
     plt.hist(predictions, bins=[i * 0.05 for i in range(21)], edgecolor='black', alpha=0.7)
     plt.xlabel('Predicted Probability')
@@ -51,8 +54,10 @@ def plot_histogram(predictions, title, iteration=None):
     plt.title(title)
 
     # Create a unique filename
-    unique_id = f"iter_{iteration}" if iteration is not None else f"ts_{int(time.time())}"
-    filename = f"{title.replace(':', '').replace(' ', '_')}_{unique_id}.png"
+    perturbation_str = f"perturb={perturbation:.4f}" if perturbation is not None else ""
+    unique_id = f"iter_{iteration}" if iteration else f"ts_{int(time.time())}"
+    filename = f"{title.replace(':', '').replace(' ', '_')}_{perturbation_str}_{unique_id}.png"
+
     plt.savefig(os.path.join(output_dir, filename))  # Save figure to 'figures' folder
 
     plt.show()
