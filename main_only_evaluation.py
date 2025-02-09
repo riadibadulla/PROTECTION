@@ -9,7 +9,6 @@ from evaluate import plot_histogram
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
-
 # Choose the device
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -26,10 +25,10 @@ np.random.seed(1997)
 
 # Constants
 USING_SMT = True
-LOW_THRESHOLD = 0.48
-HIGH_THRESHOLD = 0.52
-PERTURBATION = 0.01
-TRAINED_WITH_PERTURBATION = 0.01
+LOW_THRESHOLD = 0.49
+HIGH_THRESHOLD = 0.51
+PERTURBATION = 0.05
+TRAINED_WITH_PERTURBATION = 0.00
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
 

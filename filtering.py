@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from maraboupy import Marabou
+from maraboupy import Marabou,MarabouCore
 from tqdm import tqdm
+import multiprocessing
 
 # Determine the device
 if torch.backends.mps.is_available():
@@ -12,11 +13,11 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 device = torch.device("cpu") # overwritten device
-
-
+num_cores = multiprocessing.cpu_count()
+torch.set_num_threads(num_cores)
 
 def filter_data_by_model_with_marabou(model, data_loader, low_thresh=0.25, high_thresh=0.65, perturbation=0.001):
-    options = Marabou.createOptions(verbosity=0, numWorkers=48)
+    options = Marabou.createOptions(numWorkers=num_cores,verbosity=0)
     # onnx save
     # dummy_input = next(iter(data_loader))[0][0].unsqueeze(0)  # extract one sample to infer shape
     try:

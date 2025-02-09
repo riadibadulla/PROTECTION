@@ -29,7 +29,6 @@ def train_model(model, train_loader, criterion, lr=0.001, epochs=10, T_max=5):
 
             outputs = model(features)
             outputs = outputs.view(-1, 1)  # Ensure output shape matches labels
-            print(f"Output shape: {outputs.shape}, Label shape: {labels.shape}")
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()

@@ -28,12 +28,12 @@ print(f"Using device: {device}")
 output_dir = "figures"
 
 # Constants
-NUMBER_OF_EPOCHS = 1
+NUMBER_OF_EPOCHS = 50
 LR = 0.01
 USING_SMT = True
 LOW_THRESHOLD = 0.49
 HIGH_THRESHOLD = 0.51
-PERTURBATION = 0.01
+PERTURBATION = 0.08
 
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
