@@ -31,9 +31,9 @@ if not os.path.exists(output_dir):
 # Constants
 LOW_THRESHOLD = 0.49
 HIGH_THRESHOLD = 0.51
-TRAINED_WITH_PERTURBATION = 0.08
+TRAINED_WITH_PERTURBATION = 0.1
 adversarial_epsilon = 0.01
-N_RUNS = 1  # Number of times to generate and evaluate AE
+N_RUNS = 50  # Number of times to generate and evaluate AE
 
 # Load and preprocess data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
@@ -59,6 +59,43 @@ def fgsm_attack(model, data, label, epsilon, device):
     perturbed_data = torch.clamp(perturbed_data, 0, 1)
     return perturbed_data.detach()
 
+
+def fgsm_attack_l2(model, data, label, epsilon, device):
+    # Ensure the input tensor requires gradient
+    data.requires_grad = True
+    model.eval()
+    criterion = torch.nn.BCELoss()
+    output = model(data)
+    output = output.view(-1, 1)  # Ensure shape [batch_size, 1]
+    loss = criterion(output, label)
+
+    # zero all existing gradients
+    model.zero_grad()
+
+    loss.backward()
+    # get grads
+    data_grad = data.grad.data
+
+    # for batch inputs, compute the L2 norm per sample
+    # reshape the gradient so each gradient is flattened
+    grad_view = data_grad.view(data_grad.shape[0], -1)
+    grad_norm = torch.norm(grad_view, p=2, dim=1, keepdim=True)  # shape: [batch_size, 1]
+
+    # Reshape grad_norm to broadcast correctly over the data dimensions
+    while len(grad_norm.shape) < len(data_grad.shape):
+        grad_norm = grad_norm.unsqueeze(-1)
+
+    # epsilon for division by zero avoding
+    normalized_grad = data_grad / (grad_norm + 1e-10)
+
+    # Create the perturbed data by adding the normalized gradient scaled by epsilon
+    perturbed_data = data + epsilon * normalized_grad
+
+    # Clamp the perturbed data to be within valid data range (e.g., [0,1])
+    perturbed_data = torch.clamp(perturbed_data, 0, 1)
+
+    return perturbed_data.detach()
+
 # --- Run AE generation & evaluation multiple times ---
 ae_accuracies = []
 
@@ -77,7 +114,7 @@ for run in range(N_RUNS):
         sample = torch.tensor(full_test_data[i], dtype=torch.float32).to(device).unsqueeze(0).unsqueeze(0)
         label_tensor = torch.tensor([[full_test_labels[i]]], dtype=torch.float32).to(device)
 
-        adv_sample = fgsm_attack(model, sample, label_tensor, adversarial_epsilon, device)
+        adv_sample = fgsm_attack_l2(model, sample, label_tensor, adversarial_epsilon, device)
         adv_examples[i] = adv_sample.squeeze(0).squeeze(0).cpu().numpy()
 
     # --- Pass AE through **full sequential model pipeline** (same as clean samples) ---
