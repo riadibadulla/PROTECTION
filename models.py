@@ -249,3 +249,50 @@ class smallCNN(nn.Module):
         x = x.view(x.size(0), -1)  # Flatten for the fully connected layers
         x = self.fc(x)
         return x
+
+
+class TransformerIDS(nn.Module):
+    def __init__(self,
+                 input_features=61,
+                 embed_dim=64,
+                 nhead=8,
+                 num_layers=2,
+                 hidden_dim=128,
+                 dropout=0.1):
+        super(TransformerIDS, self).__init__()
+        self.embedding = nn.Linear(1, embed_dim)
+        self.pos_embedding = nn.Parameter(torch.zeros(1, input_features, embed_dim))
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=nhead,
+            dim_feedforward=hidden_dim,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Adding Sigmoid to ensure output is in [0, 1]
+        self.classifier = nn.Sequential(
+            nn.Linear(embed_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        # Handle inputs: (batch_size, 1, 61) or (batch_size, 61)
+        if x.dim() == 3 and x.size(1) == 1:
+            x = x.squeeze(1)  # Now (batch_size, 61)
+        if x.dim() == 2:
+            x = x.unsqueeze(-1)  # Now (batch_size, 61, 1)
+        elif x.dim() != 3:
+            raise ValueError(f"Unexpected input shape: {x.shape}.")
+
+        x = self.embedding(x)
+        x = x + self.pos_embedding
+        x = self.transformer(x)
+        x = x.mean(dim=1)
+        logits = self.classifier(x)  # Outputs in [0,1] because of Sigmoid
+        return logits
