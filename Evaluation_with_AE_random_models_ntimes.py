@@ -4,12 +4,13 @@ import numpy as np
 import glob
 import random
 from dataset import load_and_preprocess_data, CustomDataset
-from models import MLPModel_likeMands
+from models import MLPModel_likeMands, TransformerIDS
 from filtering import filter_data_delegate
 from evaluate import plot_histogram
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
+from attacks import fgsm_attack_l2, bim_attack_l2
 
 # Device and seed settings
 if torch.backends.mps.is_available():
@@ -29,12 +30,12 @@ if not os.path.exists(output_dir):
 # np.random.seed(1997)
 
 # Constants
-LOW_THRESHOLD = 0.48
-HIGH_THRESHOLD = 0.52
+LOW_THRESHOLD = 0.47
+HIGH_THRESHOLD = 0.53
 # TRAINED_WITH_PERTURBATION = 0.1
 TRAINED_WITH_PERTURBATION_LIST = [0.0,0.01,0.02,0.03,0.04,0.05,0.06,0.07,0.08,0.09,0.1]
 adversarial_epsilon = 0.01
-N_RUNS = 50  # Number of times to generate and evaluate AE
+N_RUNS = 2  # Number of times to generate and evaluate AE
 
 for TRAINED_WITH_PERTURBATION in TRAINED_WITH_PERTURBATION_LIST:
     print(f"Trained with perturbation: {TRAINED_WITH_PERTURBATION}")
@@ -47,61 +48,13 @@ for TRAINED_WITH_PERTURBATION in TRAINED_WITH_PERTURBATION_LIST:
     # Get model paths
     model_paths = sorted(glob.glob(f"model_epsilon={TRAINED_WITH_PERTURBATION}_iteration_*.pth"))
 
-    # --- Define FGSM adversarial attack ---
-    def fgsm_attack(model, data, label, epsilon, device):
-        data.requires_grad = True
-        model.eval()
-        criterion = torch.nn.BCELoss()
-        output = model(data)
-        output = output.view(-1, 1)  # Ensure shape [1,1]
-        loss = criterion(output, label)
-        model.zero_grad()
-        loss.backward()
-        data_grad = data.grad.data
-        perturbed_data = data + epsilon * data_grad.sign()
-        perturbed_data = torch.clamp(perturbed_data, 0, 1)
-        return perturbed_data.detach()
-
-
-    def fgsm_attack_l2(model, data, label, epsilon, device):
-        # Ensure the input tensor requires gradient
-        data.requires_grad = True
-        model.eval()
-        criterion = torch.nn.BCELoss()
-        output = model(data)
-        output = output.view(-1, 1)  # Ensure shape [batch_size, 1]
-        loss = criterion(output, label)
-
-        # zero all existing gradients
-        model.zero_grad()
-
-        loss.backward()
-        # get grads
-        data_grad = data.grad.data
-
-        # for batch inputs, compute the L2 norm per sample
-        # reshape the gradient so each gradient is flattened
-        grad_view = data_grad.view(data_grad.shape[0], -1)
-        grad_norm = torch.norm(grad_view, p=2, dim=1, keepdim=True)  # shape: [batch_size, 1]
-
-        # Reshape grad_norm to broadcast correctly over the data dimensions
-        while len(grad_norm.shape) < len(data_grad.shape):
-            grad_norm = grad_norm.unsqueeze(-1)
-
-        # epsilon for division by zero avoding
-        normalized_grad = data_grad / (grad_norm + 1e-10)
-
-        # Create the perturbed data by adding the normalized gradient scaled by epsilon
-        perturbed_data = data + epsilon * normalized_grad
-
-        # Clamp the perturbed data to be within valid data range (e.g., [0,1])
-        perturbed_data = torch.clamp(perturbed_data, 0, 1)
-
-        return perturbed_data.detach()
-
     # --- Run AE generation & evaluation multiple times ---
     ae_accuracies = []
-
+    # --- Lists to store metrics for averaging over runs ---
+    tpr_5_list = []
+    tpr_15_list = []
+    fpr_list = []
+    fnr_list = []
     for run in range(N_RUNS):
         print(f"\n### Running Adversarial Evaluation {run+1}/{N_RUNS} ###")
 
@@ -111,13 +64,16 @@ for TRAINED_WITH_PERTURBATION in TRAINED_WITH_PERTURBATION_LIST:
         for i in range(len(full_test_data)):
             chosen_model_path = random.choice(model_paths)
             model = MLPModel_likeMands(full_test_data.shape[1]).to(device)
+            # model = TransformerIDS().to(device)
             model.load_state_dict(torch.load(chosen_model_path, map_location=device))
             model.eval()
 
             sample = torch.tensor(full_test_data[i], dtype=torch.float32).to(device).unsqueeze(0).unsqueeze(0)
             label_tensor = torch.tensor([[full_test_labels[i]]], dtype=torch.float32).to(device)
 
-            adv_sample = fgsm_attack_l2(model, sample, label_tensor, adversarial_epsilon, device)
+            # adv_sample = fgsm_attack_l2(model, sample, label_tensor, adversarial_epsilon, device)
+            adv_sample = bim_attack_l2(model,sample,label_tensor,epsilon=adversarial_epsilon,
+                                         alpha=adversarial_epsilon/5,num_iter=5,device=device)
             adv_examples[i] = adv_sample.squeeze(0).squeeze(0).cpu().numpy()
 
         # --- Pass AE through **full sequential model pipeline** (same as clean samples) ---
@@ -168,17 +124,52 @@ for TRAINED_WITH_PERTURBATION in TRAINED_WITH_PERTURBATION_LIST:
         ae_accuracies.append(ae_accuracy)
         print(f"Run {run+1}: Adversarial Accuracy = {ae_accuracy * 100:.2f}%")
 
+        # --- Compute ROC Curve ---
+        fpr_adv, tpr_adv, _ = roc_curve(full_test_labels, final_adv_predictions)
+        roc_auc_adv = auc(fpr_adv, tpr_adv)
+
+        # --- Compute TPR at FPR 5% and 15% ---
+        fpr_5_idx = np.argmin(np.abs(fpr_adv - 0.05))
+        fpr_15_idx = np.argmin(np.abs(fpr_adv - 0.15))
+        tpr_5_list.append(tpr_adv[fpr_5_idx])
+        tpr_15_list.append(tpr_adv[fpr_15_idx])
+
+        # --- Compute FPR and FNR at 0.5 Threshold ---
+        final_predictions_binary = (final_adv_predictions > 0.5).astype(int)
+        false_positives = np.sum((final_predictions_binary == 1) & (full_test_labels == 0))
+        false_negatives = np.sum((final_predictions_binary == 0) & (full_test_labels == 1))
+        true_positives = np.sum((final_predictions_binary == 1) & (full_test_labels == 1))
+        true_negatives = np.sum((final_predictions_binary == 0) & (full_test_labels == 0))
+
+        fpr_final = false_positives / (false_positives + true_negatives)
+        fnr_final = false_negatives / (false_negatives + true_positives)
+
+        fpr_list.append(fpr_final)
+        fnr_list.append(fnr_final)
+
     # --- Compute Final Averaged AE Accuracy ---
     mean_ae_accuracy = np.mean(ae_accuracies)
     std_ae_accuracy = np.std(ae_accuracies)
     print(f"\nFinal Adversarial Accuracy Over {N_RUNS} Runs: {mean_ae_accuracy * 100:.2f}% ± {std_ae_accuracy * 100:.2f}%")
 
     # --- Final AE ROC Curve ---
+    # fpr_adv, tpr_adv, _ = roc_curve(full_test_labels, final_adv_predictions)
+    # roc_auc_adv = auc(fpr_adv, tpr_adv)
+    # plt.figure()
+    # plt.plot(fpr_adv, tpr_adv, color='darkorange', lw=2, label=f'Adv ROC curve (area = {roc_auc_adv:.2f})')
+    # plt.plot([0,1],[0,1], color='navy', lw=2, linestyle='--', label='Random Guess')
+    # plt.xlabel('False Positive Rate')
+    # plt.ylabel('True Positive Rate')
+    # plt.title('Adversarial ROC Curve')
+    # plt.legend(loc="lower right")
+    # plt.show()
+    # print(f"Adversarial AUC Score: {roc_auc_adv:.2f}")
+    # plot_histogram(final_adv_predictions, title='Adversarial Predictions Histogram')
     fpr_adv, tpr_adv, _ = roc_curve(full_test_labels, final_adv_predictions)
     roc_auc_adv = auc(fpr_adv, tpr_adv)
     plt.figure()
     plt.plot(fpr_adv, tpr_adv, color='darkorange', lw=2, label=f'Adv ROC curve (area = {roc_auc_adv:.2f})')
-    plt.plot([0,1],[0,1], color='navy', lw=2, linestyle='--', label='Random Guess')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random Guess')
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('Adversarial ROC Curve')
@@ -186,3 +177,24 @@ for TRAINED_WITH_PERTURBATION in TRAINED_WITH_PERTURBATION_LIST:
     plt.show()
     print(f"Adversarial AUC Score: {roc_auc_adv:.2f}")
     plot_histogram(final_adv_predictions, title='Adversarial Predictions Histogram')
+
+    # --- Compute Final Averaged Metrics ---
+    mean_tpr_5 = np.mean(tpr_5_list)
+    std_tpr_5 = np.std(tpr_5_list)
+
+    mean_tpr_15 = np.mean(tpr_15_list)
+    std_tpr_15 = np.std(tpr_15_list)
+
+    mean_fpr = np.mean(fpr_list)
+    std_fpr = np.std(fpr_list)
+
+    mean_fnr = np.mean(fnr_list)
+    std_fnr = np.std(fnr_list)
+
+    # --- Print Final Results ---
+    print(
+        f"\nFinal Adversarial Accuracy Over {N_RUNS} Runs: {mean_ae_accuracy * 100:.2f}% ± {std_ae_accuracy * 100:.2f}%")
+    print(f"TPR at FPR 5%: {mean_tpr_5:.4f} ± {std_tpr_5:.4f}")
+    print(f"TPR at FPR 15%: {mean_tpr_15:.4f} ± {std_tpr_15:.4f}")
+    print(f"Final FPR at threshold 0.5: {mean_fpr:.4f} ± {std_fpr:.4f}")
+    print(f"Final FNR at threshold 0.5: {mean_fnr:.4f} ± {std_fnr:.4f}")
