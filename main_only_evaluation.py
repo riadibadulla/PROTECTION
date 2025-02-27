@@ -2,8 +2,9 @@
 import os
 import torch
 import numpy as np
+import argparse
 from dataset import load_and_preprocess_data, CustomDataset
-from models import MLPModel_likeMands
+from models import MLPModel_likeMands, TransformerIDS
 from filtering import filter_data_by_model_with_marabou, filter_data_delegate
 from evaluate import plot_histogram
 from torch.utils.data import DataLoader
@@ -23,12 +24,22 @@ output_dir = "figures"
 torch.manual_seed(1997)
 np.random.seed(1997)
 
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description='Train model with custom parameters.')
+parser.add_argument('--using_smt', type=bool, default=True, help='Whether to use SMT filtering (default: True)')
+parser.add_argument('--low_threshold', type=float, default=0.4, help='Low threshold for filtering (default: 0.4)')
+parser.add_argument('--high_threshold', type=float, default=0.6, help='High threshold for filtering (default: 0.6)')
+parser.add_argument('--perturbation', type=float, default=0.09, help='Perturbation value (default: 0.09)')
+parser.add_argument('--trained_perturbation', type=float, default=0.09, help='Perturbation value (default: 0.09)')
+args = parser.parse_args()
+
 # Constants
-USING_SMT = True
-LOW_THRESHOLD = 0.49
-HIGH_THRESHOLD = 0.51
-PERTURBATION = 0.05
-TRAINED_WITH_PERTURBATION = 0.00
+USING_SMT = args.using_smt
+LOW_THRESHOLD = args.low_threshold
+HIGH_THRESHOLD = args.high_threshold
+PERTURBATION = args.perturbation
+TRAINED_WITH_PERTURBATION = args.trained_perturbation
+
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
 
@@ -62,6 +73,7 @@ while True:
 
     # Load the model
     model = MLPModel_likeMands(remaining_test_data.shape[1]).to(device)
+    # model = TransformerIDS().to(device)
     model.load_state_dict(torch.load(model_path))
     model.eval()
 
