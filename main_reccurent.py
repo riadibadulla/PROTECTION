@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import numpy as np
 import torch
+import argparse
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 import os
@@ -27,14 +28,24 @@ device = torch.device("cpu")  # Overwritten device
 print(f"Using device: {device}")
 output_dir = "figures"
 
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description='Train model with custom parameters.')
+parser.add_argument('--using_smt', type=bool, default=True, help='Whether to use SMT filtering (default: True)')
+parser.add_argument('--low_threshold', type=float, default=0.4, help='Low threshold for filtering (default: 0.4)')
+parser.add_argument('--high_threshold', type=float, default=0.6, help='High threshold for filtering (default: 0.6)')
+parser.add_argument('--perturbation', type=float, default=0.09, help='Perturbation value (default: 0.09)')
+args = parser.parse_args()
+
+# Set parameters from command-line arguments
+USING_SMT = args.using_smt
+LOW_THRESHOLD = args.low_threshold
+HIGH_THRESHOLD = args.high_threshold
+PERTURBATION = args.perturbation
+
+
 # Constants
 NUMBER_OF_EPOCHS = 50
 LR = 0.01
-USING_SMT = True
-LOW_THRESHOLD = 0.49
-HIGH_THRESHOLD = 0.51
-PERTURBATION = 0.08
-
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
 
