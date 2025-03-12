@@ -175,3 +175,9 @@ Datasets/
 Marabou/
 *.onnx
 solve.txt
+alph-beta-CROWN/
+auto_LIRPA/
+complete_verifier/
+alph-beta-CROWN/*
+auto_LIRPA/*
+complete_verifier/*
