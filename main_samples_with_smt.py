@@ -1,25 +1,16 @@
-"""
-File main_samples_with_smt.py
-Author: Riad Ibadulla
-Date: 06-Mar-2025
-Description: This file contains the method similar to protection but instead of masking the original dataset,
-we also pass counter-examples (perturbed samples) to the next delegate classifier. However, a new model is
-only created every 5 iterations. Within these 5 iterations, the model trains on both the remaining (masked)
-samples and any counter-examples produced. When delegating (starting a new model), only the masked samples
-are used.
-"""
-
 import train
 from dataset import load_and_preprocess_data, CustomDataset
 from models import MLPModel_likeMands, MLPModel_likeMands_2
 from train import train_model, train_model_with_penalty
-from filtering import add_data_with_marabou, filter_data_delegate, add_data_with_ab_crown
+from filtering import add_data_with_marabou, filter_data_delegate
+from filtering_abcrown import add_data_with_abcrown
 from evaluate import plot_histogram
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import numpy as np
 import torch
 import argparse
+
 
 # Set random seeds for reproducibility
 torch.manual_seed(1997)
@@ -55,7 +46,7 @@ PERTURBATION = args.perturbation
 # Constants
 NUMBER_OF_EPOCHS = 50
 LR = 0.01
-DELEGATION_INTERVAL = 5  # New model is created every 5 iterations
+DELEGATION_INTERVAL = 5  # New delegate model is created every 5 iterations
 
 # Load and preprocess the data
 X_train, X_test, y_train, y_test = load_and_preprocess_data('Datasets/merged_shuffled_dataset.csv')
@@ -69,23 +60,31 @@ counter_examples_data = np.empty((0, X_train.shape[1]))
 counter_examples_labels = np.empty((0,))
 
 iteration = 0
+delegate_counter = 0
 current_model = None
 
-while len(masked_train_data) > 10:
+while len(masked_train_data) > 0:
     iteration += 1
     print(f"\n### Iteration {iteration} ###")
     print(f"Masked Training Samples: {len(masked_train_data)}")
 
-    # On the first iteration of each 5-iteration cycle, delegate to a new model
+    # Start a new delegate cycle every DELEGATION_INTERVAL iterations
     if iteration % DELEGATION_INTERVAL == 1:
-        print("Delegating to a new model.")
+        # Save the previous delegate model if it exists (i.e. not the very first delegate)
+        if current_model is not None:
+            save_name = f"model_epsilon={PERTURBATION}_iteration_{delegate_counter}.pth"
+            torch.save(current_model.state_dict(), save_name)
+            print(f"Saved delegate model {delegate_counter} as {save_name}.")
+        delegate_counter += 1
+        print(f"Delegating to a new model. Starting delegate {delegate_counter}.")
         current_model = MLPModel_likeMands_2(masked_train_data.shape[1]).to(device)
-        # When delegating, reset any counter-examples
+        # current_model = MLPModel_likeMands(masked_train_data.shape[1]).to(device)
+        # Reset counter-examples for the new delegate cycle.
         counter_examples_data = np.empty((0, masked_train_data.shape[1]))
         counter_examples_labels = np.empty((0,))
 
     # Build the current training set:
-    # For iterations within the same model cycle, combine masked data with counter-examples.
+    # Within the same delegate cycle, combine masked data with any counter-examples.
     if counter_examples_data.size > 0:
         current_train_data = np.concatenate([masked_train_data, counter_examples_data], axis=0)
         current_train_labels = np.concatenate([masked_train_labels, counter_examples_labels], axis=0)
@@ -99,15 +98,14 @@ while len(masked_train_data) > 10:
 
     # Train the current model on the current training set
     criterion = nn.BCELoss()
-    # train_model(current_model, current_train_loader, criterion, lr=LR, epochs=NUMBER_OF_EPOCHS)
     train_model_with_penalty(current_model,
-                current_train_loader,
-                criterion,
-                lr=LR,
-                epochs=NUMBER_OF_EPOCHS,
-                penalty_lambda=0.01,
-                lower=LOW_THRESHOLD,
-                upper=HIGH_THRESHOLD)
+                             current_train_loader,
+                             criterion,
+                             lr=LR,
+                             epochs=NUMBER_OF_EPOCHS,
+                             penalty_lambda=0.01,
+                             lower=LOW_THRESHOLD,
+                             upper=HIGH_THRESHOLD)
 
     # Evaluate the model and plot histogram for current training set predictions
     current_model.eval()
@@ -117,30 +115,31 @@ while len(masked_train_data) > 10:
             features = features.to(device)
             proba = current_model(features).squeeze().cpu().numpy()
             train_predictions.extend(proba.flatten())
-    plot_histogram(train_predictions, f"Iteration {iteration}: Training Set Predictions, Per={PERTURBATION}",
-                   iteration=iteration, perturbation=PERTURBATION)
+    plot_histogram(train_predictions,
+                   f"Iteration {iteration}: Training Set Predictions, Per={PERTURBATION}",
+                   iteration=iteration,
+                   perturbation=PERTURBATION)
 
     # Apply filtering to separate ambiguous samples from confident ones.
     if USING_SMT:
-        # train_mask, new_samples, new_labels = add_data_with_marabou(
-        #     current_model, current_train_loader, low_thresh=LOW_THRESHOLD, high_thresh=HIGH_THRESHOLD, perturbation=PERTURBATION
-        # )
-        train_mask, new_samples, new_labels = add_data_with_ab_crown(
+        train_mask, new_samples, new_labels = add_data_with_marabou(
             current_model, current_train_loader, low_thresh=LOW_THRESHOLD, high_thresh=HIGH_THRESHOLD,
             perturbation=PERTURBATION
         )
+        # train_mask, new_samples, new_labels = add_data_with_abcrown(
+        #     current_model, current_train_loader, low_thresh=LOW_THRESHOLD, high_thresh=HIGH_THRESHOLD,
+        #     perturbation=PERTURBATION
+        # )
     else:
-        train_mask = filter_data_delegate(current_model, current_train_loader, low_thresh=LOW_THRESHOLD,
-                                          high_thresh=HIGH_THRESHOLD)
+        train_mask = filter_data_delegate(current_model, current_train_loader,
+                                          low_thresh=LOW_THRESHOLD, high_thresh=HIGH_THRESHOLD)
         new_samples = np.empty((0, current_train_data.shape[1]))
         new_labels = np.empty((0,))
 
-    # The train_mask is for the entire current training set (combined data).
-    # We know how many samples came from the original masked data:
+    # Determine how many samples in the current training set came from the original masked data.
     n_mask = len(masked_train_data)
 
     # Update masked data: keep only the portion of the original masked data that passed filtering.
-    # (Assumes train_mask is a boolean array of length len(current_train_data))
     if len(train_mask) >= n_mask:
         filtered_masked = train_mask[:n_mask]
         masked_train_data = current_train_data[:n_mask][filtered_masked]
@@ -151,7 +150,6 @@ while len(masked_train_data) > 10:
         masked_train_labels = current_train_labels[train_mask]
 
     # Update counter-examples with the newly generated perturbed samples.
-    # Note: These new counter-examples are used only within the current cycle.
     counter_examples_data = new_samples
     counter_examples_labels = new_labels
 
@@ -160,5 +158,8 @@ while len(masked_train_data) > 10:
         print("No more ambiguous samples left for training. Exiting the loop.")
         break
 
-    # Save the model state for this iteration
-    torch.save(current_model.state_dict(), f"model_epsilon={PERTURBATION}_iteration_{iteration}.pth")
+# After the loop, save the last delegate model (even if its cycle wasn't completed)
+if current_model is not None:
+    save_name = f"model_epsilon={PERTURBATION}_delegate_{delegate_counter}.pth"
+    torch.save(current_model.state_dict(), save_name)
+    print(f"Saved final delegate model {delegate_counter} as {save_name}.")
