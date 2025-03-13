@@ -26,7 +26,7 @@ np.random.seed(1997)
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Train model with custom parameters.')
-parser.add_argument('--using_smt', type=bool, default=True, help='Whether to use SMT filtering (default: True)')
+parser.add_argument('--using_smt', type=lambda x: x.lower() == 'true', default=True, help='Whether to use SMT filtering (default: True)')
 parser.add_argument('--low_threshold', type=float, default=0.4, help='Low threshold for filtering (default: 0.4)')
 parser.add_argument('--high_threshold', type=float, default=0.6, help='High threshold for filtering (default: 0.6)')
 parser.add_argument('--perturbation', type=float, default=0.09, help='Perturbation value (default: 0.09)')
@@ -123,37 +123,45 @@ while True:
         remaining_test_labels = remaining_test_labels[test_mask]
         test_indices = test_indices[test_mask]
 
-# Final histogram and accuracy
+# Final histogram and accuracy for confident predictions
 if np.any(final_predictions > 0):
-    plot_histogram(final_predictions[final_predictions > 0], f"Final Combined Predictions (Confident Test Samples) per={PERTURBATION}", perturbation=PERTURBATION)
+    plot_histogram(final_predictions[final_predictions > 0],
+                   f"Final Combined Predictions (Confident Test Samples) per={PERTURBATION}",
+                   perturbation=PERTURBATION)
 
-    # Evaluate combined predictions
+    # Evaluate combined predictions on confident samples only.
+    # Note: final_predictions contains predictions only for samples that are filtered out.
     final_labels = y_test
     combined_accuracy = np.mean((final_predictions > 0.5) == final_labels)
-    print(f"Final Combined Model Accuracy: {combined_accuracy * 100:.2f}%")
-
-    # Compute and Plot ROC-AUC
-    if all_predictions and all_true_labels:
-        fpr, tpr, thresholds = roc_curve(all_true_labels, all_predictions)
-        roc_auc = auc(fpr, tpr)
-
-        # Plot the ROC curve
-        plt.figure()
-        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--', label='Random Guess')
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(f'Receiver Operating Characteristic (ROC) Curve, for Perturbations={PERTURBATION}')
-        plt.legend(loc="lower right")
-        plt.show()
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)  # Ensure the directory exists
-
-        roc_curve_path = os.path.join(output_dir, f"roc_curve_train_per_{TRAINED_WITH_PERTURBATION} test_perturbation_{PERTURBATION}_SMT_USED={USING_SMT}.png")
-        plt.savefig(roc_curve_path)
-        # Print the AUC score
-        print(f"AUC Score: {roc_auc:.2f}")
-    else:
-        print("No predictions or true labels available for ROC curve calculation.")
+    print(f"Final Combined Model Accuracy (on confident predictions): {combined_accuracy * 100:.2f}%")
 else:
     print("No confident predictions available for evaluation.")
+
+# Report the number of remaining samples (masked region) that were not confidently predicted.
+print(f"Number of remaining samples (masked region): {len(remaining_test_data)}")
+
+# Compute FPR and FNR on confident predictions (i.e. samples with non-zero final_predictions)
+confident_idx = np.nonzero(final_predictions)[0]
+if len(confident_idx) > 0:
+    confident_predictions = final_predictions[confident_idx]
+    confident_labels = y_test[confident_idx]
+
+    # Classify based on threshold 0.5
+    predicted_positive = confident_predictions > 0.5
+
+    # Calculate confusion matrix components
+    TP = np.sum((predicted_positive) & (confident_labels == 1))
+    FP = np.sum((predicted_positive) & (confident_labels == 0))
+    TN = np.sum((~predicted_positive) & (confident_labels == 0))
+    FN = np.sum((~predicted_positive) & (confident_labels == 1))
+
+    fpr = FP / (FP + TN) if (FP + TN) > 0 else 0
+    fnr = FN / (FN + TP) if (FN + TP) > 0 else 0
+
+    print(f"False Positive Rate at 0.5 threshold: {fpr:.2f}")
+    print(f"False Negative Rate at 0.5 threshold: {fnr:.2f}")
+else:
+    print("No confident predictions available to compute FPR and FNR.")
+
+# Reminder: The samples remaining in the masked region (i.e. not confidently predicted)
+# are not used for the final accuracy (or FPR/FNR) evaluation.
