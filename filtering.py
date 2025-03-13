@@ -21,7 +21,7 @@ def filter_data_by_model_with_marabou(model, data_loader, low_thresh=0.25, high_
     # onnx save
     # dummy_input = next(iter(data_loader))[0][0].unsqueeze(0)  # extract one sample to infer shape
     try:
-        dummy_input = next(iter(data_loader))[0][0].unsqueeze(0)  # Extract one sample to infer shape
+        dummy_input = next(iter(data_loader))[0][0].unsqueeze(0) # Extract one sample to infer shape
     except StopIteration:
         print("Warning: Data loader is empty. Using default dummy input.")
         # When there are two empty iterations for test
@@ -74,3 +74,54 @@ def filter_data_delegate(model, data_loader, low_thresh=0.25, high_thresh=0.65):
     probabilities = np.array(probabilities)
     mask = (probabilities >= low_thresh) & (probabilities <= high_thresh)
     return mask
+
+def add_data_with_marabou(model, data_loader, low_thresh=0.25, high_thresh=0.65, perturbation=0.001):
+    import os
+    num_cores = os.cpu_count() if os.cpu_count() is not None else 1
+    options = Marabou.createOptions(numWorkers=num_cores, verbosity=0)
+
+    # Try to get a dummy input to infer the shape
+    try:
+        dummy_input = next(iter(data_loader))[0][0].unsqueeze(0)
+    except StopIteration:
+        print("Warning: Data loader is empty. Using default dummy input.")
+        dummy_input = torch.zeros(1, 61)
+
+    onnx_filename = f"model_perturbations={perturbation}.onnx"
+    torch.onnx.export(model, dummy_input, onnx_filename, input_names=["input"], output_names=["output"])
+
+    # Load the ONNX network using Marabou
+    network = Marabou.read_onnx(onnx_filename)
+    input_vars = network.inputVars[0][0]  # list of input variables
+    output_var = network.outputVars[0][0][0]  # single output variable
+
+    mask = []  # list to mark if sample is "sat"
+    perturbed_samples = []  # list to store perturbed samples (from Marabou solution)
+    perturbed_labels = []  # corresponding labels for the perturbed samples
+
+    model.eval()
+    with torch.no_grad():
+        progress_bar = tqdm(data_loader, desc="Filtering data with perturbation", leave=False)
+        for features, labels in progress_bar:
+            for idx, data_point in enumerate(features):
+                data_point_np = data_point.numpy()
+                # Set the bounds for each input variable based on the perturbation
+                for i, var in enumerate(input_vars):
+                    network.setLowerBound(var, max(0.0, data_point_np[i] - perturbation))
+                    network.setUpperBound(var, min(1.0, data_point_np[i] + perturbation))
+                # Set the output bounds
+                network.setLowerBound(output_var, low_thresh)
+                network.setUpperBound(output_var, high_thresh)
+                # Solve the SMT instance
+                solve_status, solution,_ = network.solve(options=options)
+                if solve_status == "sat":
+                    mask.append(True)
+                    # Extract the perturbed sample from the solution dictionary
+                    perturbed_sample = np.array([solution[var] for var in input_vars])
+                    perturbed_samples.append(perturbed_sample)
+                    # Record the corresponding label (convert tensor to a Python value if needed)
+                    perturbed_labels.append(
+                        labels[idx].item() if isinstance(labels[idx], torch.Tensor) else labels[idx])
+                else:
+                    mask.append(False)
+    return np.array(mask), np.array(perturbed_samples), np.array(perturbed_labels)
