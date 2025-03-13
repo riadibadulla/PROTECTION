@@ -97,6 +97,21 @@ class MLPModel_likeMands(nn.Module):
     def forward(self, x):
         return self.layers(x)
 
+class MLPModel_likeMands_2(nn.Module):
+    def __init__(self, in_features):
+        super(MLPModel_likeMands_2, self).__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(in_features, 25),
+            nn.ReLU(),
+            nn.Linear(25, 50),
+            nn.ReLU(),
+            nn.Linear(50, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.layers(x)
+
 # Define the second MLP model
 class MLPModel2_large(nn.Module):
     def __init__(self, in_features):
