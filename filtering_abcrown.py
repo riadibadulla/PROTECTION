@@ -7,7 +7,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 import time
 import builtins
-
+from complete_verifier import arguments  # For retrieving the saved output probability
 
 def load_local_module(module_name, module_file_path):
     """
@@ -74,18 +74,24 @@ arguments.Config.general["device"] = "cpu"
 print("Device set to:", arguments.Config.general["device"])
 
 
-# -------------------------------
-# Define our filtering function using ABCROWN.incomplete_verifier
-# -------------------------------
-def add_data_with_abcrown(model, data_loader, low_thresh=0.25, high_thresh=0.65, perturbation=0.001):
+
+def add_data_with_abcrown(model, data_loader, low_thresh=0.25, high_thresh=0.65, perturbation=0.01):
     """
-    For each sample in data_loader, build a simple specification (vnnlib)
-    that enforces (for example) that the network output >= low_thresh.
-    Then, call ABCROWN.incomplete_verifier to verify the sample.
+    For each sample in data_loader, build a vnnlib specification that enforces that under
+    an input perturbation of ±1% of its features, the network output remains outside the
+    abstention range [low_thresh, high_thresh]. In other words, we want to verify that:
+
+         output < low_thresh  OR  output > high_thresh
+
+    Using ABCROWN's incomplete verifier, we use the returned status to determine the result:
+      - If the status indicates unsafety (e.g. starts with "unsafe"), then the property is
+        not satisfied (i.e. there exists a perturbation causing the output to fall within
+        [low_thresh, high_thresh]). In that case, we set the mask to True and return a counterexample.
+      - Otherwise (e.g. status starts with "safe" or is unknown), we set the mask to False.
 
     Returns:
-      mask: a boolean numpy array (True for verified samples),
-      perturbed_samples: numpy array of outputs (if available),
+      mask: a boolean numpy array, where True indicates the property is violated (counterexample found),
+      perturbed_samples: a numpy array of counterexample outputs (if available),
       perturbed_labels: corresponding labels.
     """
     # Instantiate the ABCROWN verifier with device forced to CPU.
@@ -98,19 +104,19 @@ def add_data_with_abcrown(model, data_loader, low_thresh=0.25, high_thresh=0.65,
     model.eval()
     with torch.no_grad():
         for features, labels in tqdm(data_loader, desc="Filtering samples"):
-            # Process each sample individually (assuming features is a batch tensor)
+            # Process each sample in the batch individually.
             for idx in range(features.size(0)):
                 sample = features[idx:idx + 1]  # shape: (1, input_dim)
                 label = labels[idx]
 
-                # Define upper and lower bounds with the perturbation.
+                # Create perturbation bounds ±1% (default perturbation value)
                 data_ub = sample + perturbation
                 data_lb = sample - perturbation
 
-                # Build a dummy vnnlib specification.
-                # Format: vnnlib = [(input_x, specs)]
-                # Here, specs is a list with one clause: ([1], low_thresh)
-                vnnlib = [(sample, [([1], low_thresh)])]
+                # Build a vnnlib specification for the property:
+                #    output < low_thresh OR output > high_thresh
+                # We express "output < low_thresh" as -output ≥ -low_thresh.
+                vnnlib = [(sample, [([-1], -low_thresh), ([1], high_thresh)])]
 
                 try:
                     status, ret, _ = verifier.incomplete_verifier(
@@ -126,27 +132,134 @@ def add_data_with_abcrown(model, data_loader, low_thresh=0.25, high_thresh=0.65,
                     status = "unknown"
                     ret = {}
 
-                if status == "safe-incomplete":
+                # Use the status to decide:
+                # If the status indicates unsafety (property violated), then the output
+                # falls within [low_thresh, high_thresh] for some perturbation.
+                if status.startswith("safe"):
                     mask.append(True)
+                    # Try to extract a counterexample.
+                    counterexample = None
+                    if "attack_images" in ret and ret["attack_images"] is not None:
+                        ce = ret["attack_images"]
+                        if isinstance(ce, torch.Tensor):
+                            counterexample = ce.cpu().numpy()
+                        else:
+                            counterexample = ce
+                    else:
+                        # Fallback: try to get the output from the global arguments.
+                        try:
+                            from complete_verifier import arguments
+                            perturbed_output = arguments.Globals.get("out", {}).get("pred", None)
+                            if perturbed_output is not None:
+                                counterexample = perturbed_output.numpy().item()
+                        except Exception as e:
+                            print(f"Could not retrieve perturbed output for sample {idx}: {e}")
+                            counterexample = None
+                    perturbed_samples.append(counterexample)
+                else:
+                    # If status indicates safe (property holds) or is unknown, we set mask to False.
+                    mask.append(False)
+                    # Optionally, store the verified output.
                     try:
                         from complete_verifier import arguments
                         perturbed_output = arguments.Globals.get("out", {}).get("pred", None)
                         if perturbed_output is not None:
-                            perturbed_samples.append(perturbed_output.numpy())
+                            counterexample = perturbed_output.numpy().item()
                         else:
-                            perturbed_samples.append(None)
+                            counterexample = None
                     except Exception as e:
-                        print(f"Could not retrieve perturbed output for sample {idx}: {e}")
-                        perturbed_samples.append(None)
-                    perturbed_labels.append(label.item() if hasattr(label, "item") else label)
-                else:
-                    mask.append(False)
-                    perturbed_samples.append(None)
-                    perturbed_labels.append(label.item() if hasattr(label, "item") else label)
+                        counterexample = None
+                    perturbed_samples.append(counterexample)
+
+                perturbed_labels.append(label.item() if hasattr(label, "item") else label)
 
     return np.array(mask), np.array(perturbed_samples), np.array(perturbed_labels)
 
-
+#
+# def add_data_with_abcrown(model, data_loader, low_thresh=0.2, high_thresh=0.8, perturbation=0.01):
+#     """
+#     Uses the complete verifier exclusively to check if a sample is unsafe.
+#
+#     The safe property is: for all allowed perturbations,
+#         output ≤ low_thresh  OR  output ≥ high_thresh.
+#     Thus, if there is any perturbation producing an output in (low_thresh, high_thresh),
+#     the sample is unsafe.
+#
+#     For each sample in the data loader, this function:
+#       1. Constructs perturbation bounds (data_lb, data_ub).
+#       2. Builds a vnnlib specification for the safe property.
+#       3. Calls the complete verifier.
+#       4. Extracts the output probability (the network's prediction under perturbation)
+#          from a global variable.
+#       5. If the output falls in [low_thresh, high_thresh] (or the verifier’s status indicates unsafety),
+#          marks the sample as unsafe.
+#
+#     Returns:
+#       mask: Boolean numpy array with one entry per sample (True = unsafe).
+#       unsafe_outputs: Array of perturbed output probabilities (counterexamples) for unsafe samples.
+#       unsafe_labels: Array of labels for unsafe samples.
+#     """
+#     verifier = abcrown.ABCROWN(args=["--device=cpu"])
+#
+#     mask = []  # One Boolean per sample.
+#     unsafe_outputs = []  # To store the output probability (counterexample) for unsafe samples.
+#     unsafe_labels = []  # To store the label for unsafe samples.
+#
+#     model.eval()
+#     with torch.no_grad():
+#         for features, labels in tqdm(data_loader, desc="Filtering samples (complete verifier)"):
+#             for idx in range(features.size(0)):
+#                 sample = features[idx:idx + 1]  # Shape: (1, input_dim)
+#                 label = labels[idx]
+#
+#                 # Define the allowed perturbation bounds (± perturbation)
+#                 data_ub = sample + perturbation
+#                 data_lb = sample - perturbation
+#
+#                 # Build vnnlib specification for the safe property:
+#                 # Safe if: output ≤ low_thresh OR output ≥ high_thresh.
+#                 # That is, if any perturbation makes output fall into [low_thresh, high_thresh],
+#                 # then the sample is unsafe.
+#                 vnnlib = [(sample, [([-1], -low_thresh), ([1], high_thresh)])]
+#
+#                 try:
+#                     complete_status = verifier.complete_verifier(
+#                         model_ori=model,
+#                         model_incomplete=None,  # We are not using an incomplete model here.
+#                         vnnlib=vnnlib,
+#                         batched_vnnlib=[vnnlib[0]],  # Batched version of the specification.
+#                         vnnlib_shape=sample.shape[1:],  # The shape of a single sample's input.
+#                         index=idx,
+#                         timeout_threshold=10.0,  # Set an appropriate timeout.
+#                         results={}  # Pass an empty dictionary to satisfy parameter requirements.
+#                     )
+#                 except Exception as e:
+#                     print(f"Complete verifier failed for sample {idx}: {e}")
+#                     complete_status = "unknown"
+#
+#                 # Extract the output probability from the global variable.
+#                 try:
+#                     perturbed_output = arguments.Globals.get("out", {}).get("pred", None)
+#                     if perturbed_output is not None:
+#                         prob_val = perturbed_output.numpy().item()
+#                     else:
+#                         prob_val = None
+#                 except Exception as e:
+#                     print(f"Error retrieving output for sample {idx}: {e}")
+#                     prob_val = None
+#
+#                 # Final decision: mark as unsafe if either the complete verifier status
+#                 # indicates unsafety (e.g. "unsafe-bab" or "unsafe-pgd")
+#                 # OR if the extracted output probability falls within [low_thresh, high_thresh].
+#                 if (prob_val is not None and (low_thresh <= prob_val <= high_thresh)) or \
+#                         (isinstance(complete_status, str) and complete_status.startswith("unsafe")):
+#                     mask.append(True)
+#                     unsafe_outputs.append(prob_val)
+#                     unsafe_labels.append(label.item() if hasattr(label, "item") else label)
+#                 else:
+#                     mask.append(False)
+#
+#     return np.array(mask), np.array(unsafe_outputs), np.array(unsafe_labels)
 # -------------------------------
 # Example usage
 # -------------------------------
